@@ -19,32 +19,36 @@
             <input type="datetime-local" id="leaved_at" name="leaved_at" class="form-control" required>
         </div>
         <button type="submit" class="btn btn-primary">Submit</button>
-        <!--        <button type="button" class="btn btn-success">Export</button>-->
         <div class="mb-3">
             <a href="for_export.php" class="btn btn-success">Export</a>
         </div>
     </form>
 
-<?php
-    date_default_timezone_set("Asia/Tashkent");
+    <?php
+
     try {
         $pdo = new PDO("mysql:host=127.0.0.1;dbname=daily", "root", '');
         $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     } catch (PDOException $e) {
-        die("connected error: " . $e->getMessage());
+        die("Connection failed: " . $e->getMessage());
     }
+
     class Daily
     {
         const WORK_DURATION = 9;
-        private $pdo;
+
+        public $pdo;
+
         public function __construct(PDO $pdo)
         {
             $this->pdo = $pdo;
         }
+
         public function calculate(DateTime $arrivedAt, DateTime $leavedAt)
         {
             return $arrivedAt->diff($leavedAt);
         }
+
         public function calculateRemainingTime(DateInterval $working_hours, $working_duration = self::WORK_DURATION)
         {
             $standardSeconds = $working_duration * 3600;
@@ -52,6 +56,7 @@
             $remainingSeconds = $standardSeconds - $workedSeconds;
             return $remainingSeconds;
         }
+
         public function getWorkTable()
         {
             $query = $this->pdo->query("SELECT * FROM daily");
@@ -68,8 +73,8 @@
             $workedSeconds = ($duration->h * 3600) + ($duration->i * 60) + $duration->s;
             $remainingSeconds = $daily->calculateRemainingTime($duration);
             $requiredWorkOff = $remainingSeconds > 0 ? gmdate("H:i:s", $remainingSeconds) : '00:00:00';
-            echo "<div class='alert alert-info'>worked: " . $duration->format('%h soat %i minut') . "<br>";
-            echo "rent time: " . gmdate("H:i:s", $remainingSeconds) . "</div>";
+            echo "<div class='alert alert-info'>Worked: " . $duration->format('%h hours %i minutes') . "<br>";
+            echo "Remaining time: " . gmdate("H:i:s", $remainingSeconds) . "</div>";
 
             try {
                 $stmt = $pdo->prepare("INSERT INTO daily (arrived_at, leaved_at, required_work_off) VALUES (:arrived_at, :leaved_at, :required_work_off)");
@@ -78,70 +83,60 @@
                 $stmt->bindParam(':required_work_off', $requiredWorkOff);
                 $stmt->execute();
             } catch (PDOException $e) {
-                echo "<div class='alert alert-danger'>error: " . $e->getMessage() . "</div>";
+                echo "<div class='alert alert-danger'>Error: " . $e->getMessage() . "</div>";
             }
         }
-
     }
+
     $daily = new Daily($pdo);
-    $workData = $daily->getWorkTable();
+    $limit = 2;
+    $currentPage = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
+    $offset = ($currentPage - 1) * $limit;
+    $workData = $daily->pdo->query("SELECT * FROM daily LIMIT $offset, $limit")->fetchAll(PDO::FETCH_ASSOC);
+    $totalRecordsCount = $pdo->query("SELECT COUNT(*) FROM daily")->fetchColumn();
+    $pages = ceil($totalRecordsCount / $limit);
+    ?>
 
-    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-        if (isset($_POST['toggle_worked_off']) && isset($_POST['work_id'])) {
-            $workId = $_POST['work_id'];
-            $workOff = $_POST['toggle_worked_off'] ? 1 : 0;
-            try {
-                $stmt = $pdo->prepare("UPDATE daily SET worked_off = :work_off WHERE id = :work_id");
-                $stmt->bindParam(':work_off', $workOff, PDO::PARAM_INT);
-                $stmt->bindParam(':work_id', $workId, PDO::PARAM_INT);
-                $stmt->execute();
-            } catch (PDOException $e) {
-                echo "<div class='alert alert-danger'>error: " . $e->getMessage() . "</div>";
-            }
-        }
-    }
+    <ul class="pagination">
+        <li class="page-item <?php echo $currentPage <= 1 ? 'disabled' : ''; ?>">
+            <a class="page-link" href="?page=<?php echo $currentPage - 1; ?>" <?php echo $currentPage <= 1 ? 'tabindex="-1" aria-disabled="true"' : ''; ?>>Previous</a>
+        </li>
+        <?php for ($page = 1; $page <= $pages; $page++) : ?>
+            <li class="page-item <?php echo $page == $currentPage ? 'active' : ''; ?>">
+                <a class="page-link" href="?page=<?php echo $page; ?>"><?php echo $page; ?></a>
+            </li>
+        <?php endfor; ?>
+        <li class="page-item <?php echo $currentPage >= $pages ? 'disabled' : ''; ?>">
+            <a class="page-link" href="?page=<?php echo $currentPage + 1; ?>" <?php echo $currentPage >= $pages ? 'tabindex="-1" aria-disabled="true"' : ''; ?>>Next</a>
+        </li>
+    </ul>
+
+    <?php
     $totalWorkOffSeconds = 0;
     if (!empty($workData)) {
         echo "<h3>Table:</h3>";
         echo "<table class='table table-striped'>";
-        echo "<thead><tr><th>ID</th><th>Arrived At</th><th>Leaved At</th><th>Rent Time</th><th>worked_off</th></tr></thead><tbody>";
-        foreach ($workData as $key => $row) {
+        echo "<thead><tr><th>ID</th><th>Arrived At</th><th>Leaved At</th><th>Rend Time</th><th>Work Off</th></tr></thead><tbody>";
+        foreach ($workData as $row) {
             $rowClass = $row['work_off'] ? 'table-success' : '';
             echo "<tr class='$rowClass'>";
             echo "<td>" . htmlspecialchars($row['id']) . "</td>";
             echo "<td>" . htmlspecialchars($row['arrived_at']) . "</td>";
             echo "<td>" . htmlspecialchars($row['leaved_at']) . "</td>";
             echo "<td>" . htmlspecialchars($row['required_work_off']) . "</td>";
-            echo "<td>";
-            echo "<form method='POST'>";
-            echo "<input type='checkbox' name='toggle_worked_off[$key]' value='1' " . ($row['work_off'] ? 'checked' : '') . ">";
-            echo "<input type='hidden' name='work_id' value='" . htmlspecialchars($row['id']) . "'>";
-            echo "<input type='submit' value='Save'>";
-            echo "</form>";
-            echo "</td>";
+            echo "<td>" . htmlspecialchars($row['work_off']) . "</td>";
             echo "</tr>";
             $workOffTimeParts = explode(':', $row['required_work_off']);
             $totalWorkOffSeconds += ($workOffTimeParts[0] * 3600) + ($workOffTimeParts[1] * 60) + $workOffTimeParts[2];
-            if (isset($_POST['toggle_worked_off'][$key])) {
-                $selectedWorkOffTimeParts = explode(':', $row['required_work_off']);
-                $totalWorkOffSeconds -= ($selectedWorkOffTimeParts[0] * 3600) + ($selectedWorkOffTimeParts[1] * 60) + $selectedWorkOffTimeParts[2];
-        }
         }
         echo "</tbody></table>";
 
         $totalWorkOffFormatted = gmdate("H:i:s", $totalWorkOffSeconds);
-        echo "<div class='alert alert-info'>rent time: $totalWorkOffFormatted</div>";
+        echo "<div class='alert alert-info'>Total Remaining Time: $totalWorkOffFormatted</div>";
     }
     ?>
-    <script>
-        function toggleWorkOff(workId) {
-            var form = document.getElementById('form_' + workId);
-            form.submit();
-        }
-    </script>
+
 </div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
-
-
