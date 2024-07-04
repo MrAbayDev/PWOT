@@ -11,22 +11,27 @@
     <h2 class="mb-4">PWOT Work Of Tracker</h2>
     <form method="POST" class="mb-5">
         <div class="mb-3">
-            <label for="arrived_at" class="form-label">Kelgan vaqtingiz:</label>
+            <label for="arrived_at" class="form-label">Arrived At:</label>
             <input type="datetime-local" id="arrived_at" name="arrived_at" class="form-control" required>
         </div>
         <div class="mb-3">
-            <label for="leaved_at" class="form-label">Ketgan vaqtingiz:</label>
+            <label for="leaved_at" class="form-label">Leaved At:</label>
             <input type="datetime-local" id="leaved_at" name="leaved_at" class="form-control" required>
         </div>
         <button type="submit" class="btn btn-primary">Submit</button>
+        <!--        <button type="button" class="btn btn-success">Export</button>-->
+        <div class="mb-3">
+            <a href="for_export.php" class="btn btn-success">Export</a>
+        </div>
     </form>
-    <?php
+
+<?php
     date_default_timezone_set("Asia/Tashkent");
     try {
         $pdo = new PDO("mysql:host=127.0.0.1;dbname=daily", "root", '');
         $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     } catch (PDOException $e) {
-        die("Bog'lanish xatosi: " . $e->getMessage());
+        die("connected error: " . $e->getMessage());
     }
     class Daily
     {
@@ -53,6 +58,7 @@
             return $query->fetchAll(PDO::FETCH_ASSOC);
         }
     }
+
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!empty($_POST['arrived_at']) && !empty($_POST['leaved_at'])) {
             $arrivedAt = new DateTime($_POST['arrived_at']);
@@ -62,8 +68,8 @@
             $workedSeconds = ($duration->h * 3600) + ($duration->i * 60) + $duration->s;
             $remainingSeconds = $daily->calculateRemainingTime($duration);
             $requiredWorkOff = $remainingSeconds > 0 ? gmdate("H:i:s", $remainingSeconds) : '00:00:00';
-            echo "<div class='alert alert-info'>Ishladingiz: " . $duration->format('%h soat %i minut') . "<br>";
-            echo "Qarzdorlik: " . gmdate("H:i:s", $remainingSeconds) . "</div>";
+            echo "<div class='alert alert-info'>worked: " . $duration->format('%h soat %i minut') . "<br>";
+            echo "rent time: " . gmdate("H:i:s", $remainingSeconds) . "</div>";
 
             try {
                 $stmt = $pdo->prepare("INSERT INTO daily (arrived_at, leaved_at, required_work_off) VALUES (:arrived_at, :leaved_at, :required_work_off)");
@@ -72,12 +78,14 @@
                 $stmt->bindParam(':required_work_off', $requiredWorkOff);
                 $stmt->execute();
             } catch (PDOException $e) {
-                echo "<div class='alert alert-danger'>XATO: " . $e->getMessage() . "</div>";
+                echo "<div class='alert alert-danger'>error: " . $e->getMessage() . "</div>";
             }
         }
+
     }
     $daily = new Daily($pdo);
     $workData = $daily->getWorkTable();
+
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (isset($_POST['toggle_worked_off']) && isset($_POST['work_id'])) {
             $workId = $_POST['work_id'];
@@ -88,13 +96,13 @@
                 $stmt->bindParam(':work_id', $workId, PDO::PARAM_INT);
                 $stmt->execute();
             } catch (PDOException $e) {
-                echo "<div class='alert alert-danger'>XATO: " . $e->getMessage() . "</div>";
+                echo "<div class='alert alert-danger'>error: " . $e->getMessage() . "</div>";
             }
         }
     }
     $totalWorkOffSeconds = 0;
     if (!empty($workData)) {
-        echo "<h3>Ro'yxat:</h3>";
+        echo "<h3>Table:</h3>";
         echo "<table class='table table-striped'>";
         echo "<thead><tr><th>ID</th><th>Arrived At</th><th>Leaved At</th><th>Rent Time</th><th>worked_off</th></tr></thead><tbody>";
         foreach ($workData as $key => $row) {
@@ -122,7 +130,7 @@
         echo "</tbody></table>";
 
         $totalWorkOffFormatted = gmdate("H:i:s", $totalWorkOffSeconds);
-        echo "<div class='alert alert-info'>Umumiy qarzdorlik vaqti: $totalWorkOffFormatted</div>";
+        echo "<div class='alert alert-info'>rent time: $totalWorkOffFormatted</div>";
     }
     ?>
     <script>
@@ -135,3 +143,5 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
+
+
